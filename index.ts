@@ -68,6 +68,8 @@ export default function scss(options: CSSPluginOptions = {}): Plugin {
   let includePaths = options.includePaths || ['node_modules/']
   includePaths.push(process.cwd())
 
+  let useRules: (string | null)[] = [];
+
   const compileToCSS = async function (scss: string) {
     // Compile SASS to CSS
     if (scss.length) {
@@ -245,6 +247,11 @@ export default function scss(options: CSSPluginOptions = {}): Plugin {
         }
       }
 
+      // Extract and remove "@use" rules
+      const useRuleRegExp = /^@use(.)*$/gm;
+      useRules = useRules.concat(code.match(useRuleRegExp));
+      code = code.replace(useRuleRegExp, '');
+
       // Map of every stylesheet
       styles[id] = code
 
@@ -258,6 +265,7 @@ export default function scss(options: CSSPluginOptions = {}): Plugin {
 
       // Combine all stylesheets
       let scss = ''
+      if (useRules.length) scss = useRules.join('\n').concat('\n');
       for (const id in styles) {
         scss += styles[id] || ''
       }
