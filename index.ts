@@ -7,6 +7,7 @@ import type { Plugin } from 'rollup'
 export interface CSSPluginOptions {
   exclude?: Parameters<CreateFilter>[1]
   failOnError?: boolean
+  basePath?: string
   include?: Parameters<CreateFilter>[0]
   includePaths?: string[]
   insert?: boolean
@@ -68,7 +69,31 @@ export default function scss(options: CSSPluginOptions = {}): Plugin {
   let includePaths = options.includePaths || ['node_modules/']
   includePaths.push(process.cwd())
 
-  let useRules: (string | null)[] = [];
+  let basePath = options.basePath || process.cwd();
+  let useRules = {
+    value: new Set(),
+    add( id: string, rules: (string | null)[] | null ) {
+      let _absPath = id.split('/');
+      _absPath.pop();
+      let absPath = _absPath.join('/');
+      if (rules?.length) {
+        rules.forEach( rule => {
+          if (rule) {
+            let _rule = rule.replace(/"/g, `"`);
+            let path = _rule.match(/'((.)*)'/)![1];
+            if ( /^\.{1,2}/.test(path) ) {
+              path = resolve(`${absPath}/${path}`);
+            } else if ( path.startsWith('/') ) {
+              //
+            } else if ( path.startsWith('~') ) {
+              path = resolve(basePath, path.slice(1));
+            } else path = resolve(basePath, path);
+            this.value.add(`@use '${path}';`);
+          }
+        })
+      }
+    }
+  }
 
   const compileToCSS = async function (scss: string) {
     // Compile SASS to CSS
@@ -249,8 +274,9 @@ export default function scss(options: CSSPluginOptions = {}): Plugin {
 
       // Extract and remove "@use" rules
       const useRuleRegExp = /^@use(.)*$/gm;
-      useRules = useRules.concat(code.match(useRuleRegExp));
+      useRules.add(id, code.match(useRuleRegExp));
       code = code.replace(useRuleRegExp, '');
+      
 
       // Map of every stylesheet
       styles[id] = code
@@ -265,7 +291,9 @@ export default function scss(options: CSSPluginOptions = {}): Plugin {
 
       // Combine all stylesheets
       let scss = ''
-      if (useRules.length) scss = useRules.join('\n').concat('\n');
+      if (useRules.value.size) {
+        scss = Array.from(useRules.value).join('\n').concat('\n');
+      }
       for (const id in styles) {
         scss += styles[id] || ''
       }
